@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: mosquitto
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    # Command to run Mosquitto without auth for simplicity in this demo
+    command: sh -c "echo 'allow_anonymous true' > /mosquitto/config/mosquitto.conf && echo 'listener 1883 0.0.0.0' >> /mosquitto/config/mosquitto.conf && /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf"
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - iot_network
+
+  postgres:
+    image: postgres:15
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: iot_user
+      POSTGRES_PASSWORD: iot_password
+      POSTGRES_DB: iot_telemetry
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iot_user -d iot_telemetry"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - iot_network
+
+  grafana:
+    image: grafana/grafana:10.0.3
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: "grafana-clock-panel,grafana-simple-json-datasource"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - iot_network
+
+  ingestion_service:
+    build:
+      context: ./ingestion_service
+    container_name: ingestion_service
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: 1883
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: iot_telemetry
+      DB_USER: iot_user
+      DB_PASS: iot_password
+    networks:
+      - iot_network
+
+  device_simulator:
+    build:
+      context: ./device_simulator
+    container_name: device_simulator
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    environment:
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: 1883
+      DATA_FILE: /app/data/telemetry.csv
+    networks:
+      - iot_network
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:
+  pg_data:
+  grafana_data:
+
+networks:
+  iot_network:
+    driver: bridge

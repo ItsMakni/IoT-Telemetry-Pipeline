@@ -20,6 +20,10 @@ graph LR
 4. **PostgreSQL**: A robust relational database. We utilize a composite index on device ID and timestamp to ensure rapid querying for time-series data.
 5. **Grafana**: Pre-provisioned to connect to PostgreSQL out-of-the-box, providing real-time dashboards for metrics like voltage, current, and temperature.
 
+<div align="center">
+  <img src="./dahsboard.png" />
+</div>
+
 ## Protocol Choice Justification
 
 - **Modbus (Simulation)**: Traditionally used in industrial settings for local, register-based hardware communication. Our simulator acts as if it has pulled data from a Modbus gateway.
